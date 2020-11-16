@@ -1,0 +1,849 @@
+/*!
+  * \file SpaceInvader_AC.cpp
+  * \author Alain Casali Marc Laporte
+  * \date 7 janvier 2016
+  * \brief Projet de C++ simulant un SpaceInvader
+  * \version 1.0
+  * \bug Aucun connu
+  */
+
+#include <unistd.h>
+#include <iostream>
+#include <fstream>
+#include <cstdlib> //rand ()
+#include <ctime> //time ()
+#include <termios.h> //termios
+#include <cstdio> // getchar
+#include "MyType_AC.h"
+#include "SpaceInvader_AC.h"
+#include "MyVar_AC.h"
+
+#include <thread>
+#include <chrono>
+#include <string>
+
+using namespace std;
+using namespace nsSpaceInvader_AC;
+
+const std::string KLootScoreColor (KVert);
+const std::string KLootLifeColor (KMAgenta);
+
+namespace nsSpaceInvader_AC
+{
+
+unsigned AfficherScore(unsigned & score)
+{
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    cout << "Score: " << score << endl;
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    cout << "Bonus vie x" << nbVies << ": ";
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    cout << "+" << 100*nbVies << endl << endl;
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    cout << "Score Final: " << score+100*nbVies << endl << endl;
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    return score+100*nbVies;
+}
+void Couleur (const string & Coul) // Auteurs : AC et ML
+{
+    cout << "\033[" << Coul <<"m";
+} //Couleur ()
+
+void ClearScreen () // Auteurs : AC et ML
+{
+    cout << "\033[H\033[2J";
+}
+
+void PutCVPosition (const CVInvaders & VInvaders, char Car, CVString & Space)
+{
+    /* for (const UnInvader & Pos : VPos)
+                Space[Pos.X][Pos.Y] = Car; */
+    for (const UnInvader & Invader : VInvaders)
+        Space[Invader.Pos.first][Invader.Pos.second] = Car;
+}// PutCVPosition ()
+
+void PutAllObjects (const CAObject & Obj, CVString & Space)
+{
+    for (string & Line : Space) Line = KEmptyLine;
+    PutCVPosition (Obj[0], KInsideInvader, Space);
+    PutCVPosition (Obj[1], KMissile, Space);
+    PutCVPosition (Obj[2], KInsideMe, Space);
+    PutCVPosition (Obj[3], KTorpedo, Space);
+    PutCVPosition (Obj[4], KInsideInvader2, Space);
+    PutCVPosition (Obj[5], KLootLife, Space);
+    PutCVPosition (Obj[6], KLootScore, Space);
+    PutCVPosition (Obj[7], KShield, Space);
+    PutCVPosition (Obj[8], KBazooka, Space);
+    PutCVPosition (Obj[9], KInsideInvader3, Space);
+    PutCVPosition (Obj[10], KInsideInvader4, Space);
+    PutCVPosition (Obj[11], KMissile2, Space);
+
+
+}// PutAllObjects ()
+
+void Pause(void)
+{
+    cout << "Pause" << endl;
+    while(true)
+    {
+        char Input;
+        //fonction en C qui permet de lire un caractère. cin ne fonctionnant pas dans cette configuration
+        //cin >> Move;
+        read (STDIN_FILENO, &Input, 1);
+        switch (Input)
+        {
+        case KPause:
+            return;
+        }
+    }
+}
+
+void DisplaySpace (const CVString & Space,unsigned & tourJ)
+{
+    ClearScreen();
+    unsigned i = 0;
+    if(tourJ == 0)
+        cout << string (Space[0].size() + 2, '-') << " Score: " << score << endl;
+    if(tourJ == 1)
+       cout << string (Space[0].size() + 2, '-') << " Score: " << scoreJ1 << endl;
+    if(tourJ == 2)
+        cout << string (Space[0].size() + 2, '-') << " Score: " << scoreJ2 << endl;
+    for (const string & Line : Space)
+    {
+        ++i;
+        cout <<'|';
+        for (const char Cel : Line)
+        {
+            switch (Cel)
+            {
+            case KLootLife:
+                Couleur(KLootLifeColor);
+                break;
+            case KLootScore:
+                Couleur(KLootScoreColor);
+                break;
+            case KInsideInvader:
+            case KMissile:
+                Couleur (KInvadersColor);
+                break;
+            case KInsideInvader2 :
+                Couleur (KInvadersColor2);
+                break;
+            case KInsideInvader3:
+                Couleur(KInvadersColor3);
+                break;
+
+            case KInsideInvader4:
+            case KMissile2:
+                Couleur(KInvadersColor4);
+                break;
+            case KInsideMe:
+            case KTorpedo:
+                Couleur (KMyColor);
+            }
+            cout << Cel;
+            Couleur (KReset);
+        }
+        cout <<'|';
+        if(2 == i)
+            cout << " Vie(s): " << nbVies;
+        else if(4 == i)
+        {
+            cout << " Bouclier : ";
+            if (shield)
+                cout << "1";
+            else
+                cout << "0";
+            cout << "/1";
+        }
+
+        if(6 == i)
+            cout << " Nombre de missile disponibles : " << TirBazooka << "/3";
+        cout << endl;
+
+    }
+    cout << string (Space[0].size() + 2, '-') << endl;
+}// DisplaySpace ()
+
+void InitSpace (CVString & Space, CAObject & Obj)
+{
+    //l'espace de jeu
+    Space.resize(KSizeLine);
+    for (string & Line : Space)
+        Line = KEmptyLine;
+    //les envahisseurs
+    Obj[0].resize(KInvadersSize);
+    for (unsigned i (0); i < Obj[0].size (); ++i){
+        //Obj[0][i].X = 0;
+        //Obj[0][i].Y = i + KBegInvader;
+        Obj[0][i].Pos = make_pair (0, i + KBegInvader);
+        Obj[0][i].nbVie = 1;
+    }
+    //moi
+    Obj[2].resize(KMySize);
+    for (unsigned i(0); i < Obj[2].size(); ++i){
+        //Obj[2][i].X = 0;
+        //Obj[2][i].Y = KBegMe ;
+        Obj[2][i].Pos = make_pair (Space.size () -1, KBegMe +i);
+        Obj[2][i].nbVie = 3;
+    }
+    //les envahisseurs2
+    Obj[4].resize(KInvadersSize);
+    for (unsigned i (0); i < Obj[4].size (); ++i){
+        //Obj[4][i].X = 0;
+        //Obj[4][i].Y = i + 1 + KBegInvader;
+        Obj[4][i].Pos = make_pair (1, i + KBegInvader);
+        Obj[4][i].nbVie = 2;
+    }
+
+    Obj[9].resize(KInvadersSize);
+    for (unsigned i (0); i < Obj[9].size (); ++i)
+    {
+        //Obj[4][i].X = 0;
+        //Obj[4][i].Y = i + 1 + KBegInvader;
+        Obj[9][i].Pos = make_pair (2, i + KBegInvader);
+        Obj[9][i].nbVie = 3;
+
+
+    }
+    Obj[10].resize(KInvadersSize);
+    for (unsigned i (0); i < Obj[10].size (); ++i)
+    {
+        //Obj[4][i].X = 0;
+        //Obj[4][i].Y = i + 1 + KBegInvader;
+        Obj[10][i].Pos = make_pair (3, i + KBegInvader);
+        Obj[10][i].nbVie = 1;
+
+
+    }
+} //InitSpace ()
+
+
+void MaxX (const CVInvaders & VInvaders, UnInvader & MaxInvader)
+{
+    MaxInvader = VInvaders [0];
+    for (unsigned i (1); i < VInvaders.size(); ++i)
+        if (MaxInvader.Pos.second < VInvaders[i].Pos.second)
+            MaxInvader = VInvaders[i];
+}// MaxX ()
+
+void MaxY (const CVInvaders & VInvaders, UnInvader & MaxInvader)
+{
+    MaxInvader = VInvaders [0];
+    for (unsigned i (1); i < VInvaders.size(); ++i)
+        if (MaxInvader.Pos.first < VInvaders[i].Pos.first)
+            MaxInvader = VInvaders[i];
+} // MaxY ()
+
+
+void MinX (const CVInvaders & VInvaders, UnInvader & MinInvader)
+{
+    MinInvader = VInvaders [0];
+    for (unsigned i (1); i < VInvaders.size(); ++i)
+        if (MinInvader.Pos.second > VInvaders[i].Pos.second)
+            MinInvader = VInvaders[i];
+}// MinX ()
+
+bool MoveLeft (CVInvaders & VInvader)
+{
+    UnInvader MinInvader;
+    MinX (VInvader, MinInvader);
+    if (0 == MinInvader.Pos.second) return false;
+    for (UnInvader & Invader : VInvader)
+        -- Invader.Pos.second;
+    return true;
+} // MoveLeft ()
+
+bool MoveRight (const CVString & Space, CVInvaders & VInvader)
+{
+    UnInvader MaxInvader;
+    MaxX (VInvader, MaxInvader);
+    if (Space[0].size() -1 == MaxInvader.Pos.second) return false;
+    for (UnInvader & Invader : VInvader)
+        ++ Invader.Pos.second;
+    return true;
+} //MoveRight ()
+
+bool MoveMeLeft (const CVString & Space, CVInvaders & VInvaders)
+{
+    bool MaxLeft;
+    UnInvader MinInvader;
+    MinX (VInvaders, MinInvader);
+    MaxLeft = (0 == MinInvader.Pos.second);
+    for (UnInvader & Invader : VInvaders)
+        if (MaxLeft)
+            Invader.Pos.second=Space[0].size()-1;
+        else --Invader.Pos.second;
+    return MaxLeft;
+} // MoveMeLeft ()
+
+bool MoveMeRight (const CVString & Space, CVInvaders & VInvaders)
+{
+    bool MaxRight;
+    UnInvader MaxInvader;
+    MaxX (VInvaders, MaxInvader);
+    MaxRight = (Space[0].size() -1 == MaxInvader.Pos.second);
+    for (UnInvader & Invader : VInvaders)
+        if (MaxRight)
+            Invader.Pos.second=0;
+        else ++ Invader.Pos.second;
+    return MaxRight;
+} //MoveMeRight ()
+
+void MoveDown (CVInvaders & VInvaders)
+{
+    for (UnInvader & Invader : VInvaders)
+        ++ Invader.Pos.first;
+}// MoveDown ()
+
+void MoveUp (CVInvaders & VInvaders)
+{
+    for (UnInvader & Invader : VInvaders)
+        -- Invader.Pos.first;
+} //MoveUp ()
+
+void ManageMe (const CVString & Space, CAObject &Obj)
+{
+    char Move;
+    //fonction en C qui permet de lire un caractère. cin ne fonctionnant pas dans cette configuration
+    //cin >> Move;
+    read (STDIN_FILENO, &Move, 1);
+    switch (Move)
+    {
+    case KLeft:
+        MoveMeLeft (Space, Obj[2]);
+        if(!shield)
+            MoveMeLeft (Space, Obj[7]);
+        break;
+    case KRight :
+        MoveMeRight (Space, Obj[2]);
+        if(!shield)
+            MoveMeRight (Space, Obj[7]);
+        break;
+    case KShoot:
+        Obj[3].push_back(Obj[2][rand () % Obj[2].size ()]);
+        break;
+    case KActiveShield:
+        if(!shield) break;
+        else
+        {
+            Obj[7].push_back(Obj[2][rand () % Obj[2].size ()]);
+            MoveUp(Obj[7]);
+            shield = false;
+        }
+        break;
+    case KActiveBazooka:
+
+        if (TirBazooka == 0) break;
+        else
+        {
+            Obj[8].push_back(Obj[2][rand () % Obj[2].size ()]);
+            --TirBazooka;
+        }
+        break;
+
+    case KLJump:
+        MoveMeLeft (Space, Obj[2]);
+        MoveMeLeft (Space, Obj[2]);
+        MoveMeLeft (Space, Obj[2]);
+        if(!shield)
+        {
+            MoveMeLeft (Space, Obj[7]);
+            MoveMeLeft (Space, Obj[7]);
+            MoveMeLeft (Space, Obj[7]);
+        }
+        break;
+    case KRJump:
+        MoveMeRight (Space, Obj[2]);
+        MoveMeRight (Space, Obj[2]);
+        MoveMeRight (Space, Obj[2]);
+        if(!shield)
+        {
+            MoveMeRight (Space, Obj[7]);
+            MoveMeRight (Space, Obj[7]);
+            MoveMeRight (Space, Obj[7]);
+        }
+        break;
+    case KPause:
+        Pause();
+        break;
+    }
+}// ManageMe ()
+
+void ManageInvaders (const CVString & Space, CAObject &Obj, unsigned & Direction, unsigned & WhatInvaderDo)
+{
+    //on decide de ce qu'on fait
+    //la on bouge l'invader
+    if (WhatInvaderDo++ != KMissileRatio)
+    {
+        switch (Direction)
+        {
+        case 0:
+            if (!MoveRight(Space, Obj[0]))
+            {
+                MoveDown(Obj[0]);
+                ++Direction;
+            }
+            break;
+        case 1:
+            if (!MoveLeft(Obj[0]))
+            {
+                MoveDown(Obj[0]);
+                Direction = 0;
+            }
+        }
+    }
+    //sinon on lance un missile d'une des cases en dessous de l'invader
+    //peut importe ou
+    else
+    {
+        Obj[1].push_back(Obj[0][rand () % Obj[0].size ()]);
+        WhatInvaderDo = 0;
+    }
+}// ManageInvaders ()
+
+void ManageInvaders2 (const CVString & Space, CAObject &Obj, unsigned & Direction, unsigned & WhatInvaderDo)
+{
+    //on decide de ce qu'on fait
+    //la on bouge l'invader
+    if (WhatInvaderDo++ != KMissileRatio)
+    {
+        switch (Direction)
+        {
+        case 0:
+            if (!MoveRight(Space, Obj[4]))
+            {
+                MoveDown(Obj[4]);
+                ++Direction;
+            }
+            break;
+        case 1:
+            if (!MoveLeft(Obj[4]))
+            {
+                MoveDown(Obj[4]);
+                Direction = 0;
+            }
+        }
+    }
+    //sinon on lance un missile d'une des cases en dessous de l'invader
+    //peut importe ou
+    else
+    {
+        Obj[1].push_back(Obj[4][rand () % Obj[4].size ()]);
+        WhatInvaderDo = 0;
+    }
+}// ManageInvaders2 ()
+
+void ManageInvaders3 (const CVString & Space, CAObject &Obj, unsigned & Direction, unsigned & WhatInvaderDo)
+{
+    //on decide de ce qu'on fait
+    //la on bouge l'invader
+    if (WhatInvaderDo++ != KMissileRatio)
+    {
+        switch (Direction)
+        {
+        case 0:
+            if (!MoveRight(Space, Obj[9]))
+            {
+                MoveDown(Obj[9]);
+                ++Direction;
+            }
+            break;
+        case 1:
+            if (!MoveLeft(Obj[9]))
+            {
+                MoveDown(Obj[9]);
+                Direction = 0;
+            }
+        }
+    }
+    //sinon on lance un missile d'une des cases en dessous de l'invader
+    //peut importe ou
+    else
+    {
+        Obj[1].push_back(Obj[9][rand () % Obj[9].size ()]);
+        WhatInvaderDo = 0;
+    }
+}// ManageInvaders ()
+
+
+void ManageInvaders4 (const CVString & Space, CAObject &Obj, unsigned & Direction, unsigned & WhatInvaderDo)
+{
+    //on decide de ce qu'on fait
+    //la on bouge l'invader
+    if (WhatInvaderDo++ != KMissileRatio)
+    {
+        switch (Direction)
+        {
+        case 0:
+            if (!MoveRight(Space, Obj[10]))
+            {
+                MoveDown(Obj[10]);
+                ++Direction;    cout << "Appuyez sur '" << KPause << "' pour continuer." << endl;
+            }
+            break;
+        case 1:
+            if (!MoveLeft(Obj[10]))
+            {
+                MoveDown(Obj[10]);
+                Direction = 0;
+            }
+        }
+    }
+    //sinon on lance un missile d'une des cases en dessous de l'invader
+    //peut importe ou
+    else
+    {
+        Obj[11].push_back(Obj[10][rand () % Obj[10].size ()]);
+        WhatInvaderDo = 0;
+    }
+}// ManageInvaders ()
+
+
+void CollisionBetweenObjectsAndEnnemies (CVInvaders & Objects, CVInvaders & StarShips,CAObject & Obj,unsigned & tourJ,const unsigned & nbviemoins, const unsigned & scoreadd)
+{
+    for (unsigned i (0); i < Objects.size (); ++i)
+    {
+        //collision entre mes torpilles et les ennemis
+        unsigned j (0);
+        bool b (true);
+        while ( j < StarShips.size () && b )
+        {
+            if (Objects[i].Pos.first == StarShips[j].Pos.first && Objects[i].Pos.second == StarShips[j].Pos.second)
+            {
+                StarShips[j].nbVie -= nbviemoins;
+                Objects.erase (Objects.begin () +i);
+                if (0 == StarShips[j].nbVie)
+                {
+                    //superlatif pour me repérer
+                    srand (time(NULL));
+                    int LootRand = 1 + rand () % (KLootRate -1);
+                    if (LootRand == 1)
+                    {
+                        if (nbVies < maxVies)
+                        {
+                            Obj[5].push_back(Obj[0][j]);
+                        }
+                        else
+                        {
+                            Obj[6].push_back(Obj[0][j]);
+                        }
+                    }
+                    StarShips.erase (StarShips.begin () +j);
+                    if(tourJ == 0)
+                        score += scoreadd;
+                    if(tourJ == 1)
+                        scoreJ1 += scoreadd;
+                    if(tourJ == 2)
+                        scoreJ2 += scoreadd;
+                }
+                b = false;
+            }
+            else ++j;
+        }
+    }
+}
+
+
+
+void CollisionBetweenObjectsAndI (CVInvaders & Objects, CVInvaders & StarShips, const unsigned & nbviemoins)
+{
+    for (unsigned i (0); i < Objects.size (); ++i)
+    {
+        //collision entre les missiles et moi
+        unsigned j (0);
+        bool b (true);
+        while ( j < StarShips.size () && b )
+        {
+            if (Objects[i].Pos.first == StarShips[j].Pos.first && Objects[i].Pos.second == StarShips[j].Pos.second)
+            {
+                nbVies -= nbviemoins;
+                Objects.erase (Objects.begin () +i);
+                if ((int)nbVies <= 0) // cast vers int pour le passage de 1 à -1 vie alors que NbVies est un unsigned
+                {
+                    nbVies= 0;
+                    StarShips.erase (StarShips.begin () +j);
+                 }
+                b = false;
+            }
+            else ++j;
+        }
+    }
+}//CollisionBetweenMissilesAndI ()
+
+void CollisionBetweenLootsAndI (CVInvaders & Objects, CVInvaders & StarShips)
+{
+    for (unsigned i (0); i < Objects.size (); ++i)
+    {
+        //collision entre le loot et moi
+        unsigned j (0);
+        bool b (true);
+        while ( j < StarShips.size () && b )
+        {
+            if (Objects[i].Pos.first == StarShips[j].Pos.first && Objects[i].Pos.second == StarShips[j].Pos.second)
+            {
+                if (nbVies < maxVies) ++nbVies;
+                else score += 10;
+                Objects.erase (Objects.begin () +i);
+                b = false;
+            }
+            else ++j;
+        }
+    }
+}//CollisionBetweenLootsAndI ()
+
+void CollisionBetweenMissilesAndTorpedos (CVInvaders & Missiles, CVInvaders & Torpedos)
+{
+    //la boucle est un peu bizarre, mais elle permet de gérer
+    //deux collisions en même temps entre deux missiles et torpilles
+    //sur deux case differentes
+    //tout ça à cause du .erase () qui supprime la case courante
+    //=> on ne doit pas incrementer l'indice de boucle dans ce cas
+
+    for (unsigned i (0); i < Missiles.size (); )
+    {
+        //collision entre les missiles et les torpilles
+        unsigned j (0);
+        for (; j < Torpedos.size (); ++j)
+        {
+            if (Missiles[i].Pos.first == Torpedos[j].Pos.first && Missiles[i].Pos.second == Torpedos[j].Pos.second)
+            {
+                Torpedos.erase (Torpedos.begin () +j);
+                Missiles.erase (Missiles.begin () +i);
+                break;
+            }
+        }
+
+        if (j == Torpedos.size ()) ++i;
+    }
+}//CollisionBetweenMissilesAndTorpedos ()
+
+void CollisionBetweenShieldAndMissile (CVInvaders & Objects, CVInvaders & Shield)
+{
+    for (unsigned i (0); i < Objects.size (); ++i)
+    {
+        //collision entre le bouclier et les tirs
+        unsigned j (0);
+        bool b (true);
+        while ( j < Shield.size () && b )
+        {
+            if (Objects[i].Pos.first == Shield[j].Pos.first && Objects[i].Pos.second == Shield[j].Pos.second)
+            {
+                Objects.erase (Objects.begin () +i);
+                Shield.erase (Shield.begin() +j);
+                b = false;
+            }
+            else ++j;
+        }
+    }
+}//CollisionBetweenShieldAndMissile ()
+
+void ManageCollisions (CAObject & Obj,unsigned & tourJ)
+{
+    CollisionBetweenMissilesAndTorpedos     (Obj[1], Obj[3]);
+
+    CollisionBetweenObjectsAndI             (Obj[1], Obj[2],1);
+    CollisionBetweenObjectsAndI             (Obj[11], Obj[2],2);
+
+    CollisionBetweenLootsAndI               (Obj[5], Obj[2]);
+    CollisionBetweenLootsAndI               (Obj[6], Obj[2]);
+
+    CollisionBetweenShieldAndMissile        (Obj[1], Obj[7]);
+	CollisionBetweenShieldAndMissile        (Obj[11], Obj[7]);
+
+    CollisionBetweenObjectsAndEnnemies      (Obj[3], Obj[0], Obj,tourJ,1,100);
+    CollisionBetweenObjectsAndEnnemies     (Obj[3], Obj[4], Obj,tourJ,1,200);
+    CollisionBetweenObjectsAndEnnemies    (Obj[3], Obj[9],Obj,tourJ,1,300);
+    CollisionBetweenObjectsAndEnnemies    (Obj[3], Obj[10],Obj,tourJ,1,150);
+
+    CollisionBetweenObjectsAndEnnemies      (Obj[8], Obj[0], Obj,tourJ,1,100);
+    CollisionBetweenObjectsAndEnnemies      (Obj[8], Obj[4], Obj,tourJ,2,200);
+    CollisionBetweenObjectsAndEnnemies     (Obj[8], Obj[9], Obj,tourJ,3,300);
+    CollisionBetweenObjectsAndEnnemies     (Obj[8], Obj[10], Obj,tourJ,1,150); //Bazooka
+
+} //ManageCollisions
+
+unsigned Victory (const CVString & Space, const CAObject & Obj)
+{
+    if (0 == Obj[0].size() + Obj[4].size() + Obj[9].size() + Obj[11].size()) return 2;
+    else if (0 == Obj[2].size() || Obj[0][0].Pos.first == Space.size()-1 || Obj[4][0].Pos.first == Space.size()-1 || Obj[9][0].Pos.first == Space.size()-1 || Obj[10][0].Pos.first == Space.size()-1) return 1;
+
+    return 0;
+} //Victory ()
+
+void DeleteMissilesAndLoots (const CVString & Space, CVInvaders & Missiles)
+{
+    for (unsigned i (0); i < Missiles.size(); )
+    {
+        if (Missiles[i].Pos.first == Space.size())
+            Missiles.erase(Missiles.begin()+i);
+        else ++i;
+    }
+}//DeleteMissiles ()
+
+void DeleteTorpedos (CVInvaders & Torpedos)
+{
+    for (unsigned i (0); i < Torpedos.size(); )
+    {
+        if (unsigned (-1) == Torpedos[i].Pos.first)
+            Torpedos.erase(Torpedos.begin()+i);
+        else  ++i;
+    }
+} //DeleteTorpedos ()
+
+void DeleteBazookas (CVInvaders & Bazookas)
+{
+    for (unsigned i (0); i < Bazookas.size(); )
+    {
+        if (unsigned (-1) == Bazookas[i].Pos.first)
+            Bazookas.erase(Bazookas.begin()+i);
+        else  ++i;
+    }
+} //DeleteBazookas ()
+
+unsigned SpaceInvaders (unsigned & tourJ)
+{
+    CVString Space;
+    CAObject Obj;
+    InitSpace (Space, Obj);
+
+    unsigned Direction (0);
+    unsigned WhatInvaderDo (0);
+    unsigned Direction2 (0);
+    unsigned WhatInvaderDo2 (0);
+    unsigned Direction3 (0);
+    unsigned WhatInvaderDo3 (0);
+    unsigned Direction4 (0);
+    unsigned WhatInvaderDo4 (0);
+    unsigned Vict (0);
+    unsigned WhoIsToPlay (0);
+    while (1 != Vict && 2 != Vict)
+    {
+        //On met tous les objets dans la matrice
+        PutAllObjects (Obj, Space);
+
+        //on affiche la matrice
+        DisplaySpace (Space,tourJ);
+        cout << Obj[0].size() + Obj[4].size();
+        //c'est a qui de jouer?
+        if (KRatioMeInvaders != WhoIsToPlay++)
+            ManageMe(Space, Obj);
+        else
+	          {
+            if (0 != Obj[0].size())
+                ManageInvaders(Space, Obj, Direction, WhatInvaderDo);
+            if (0 != Obj[4].size())
+                ManageInvaders2(Space, Obj, Direction2, WhatInvaderDo2);
+            if (0 != Obj[9].size())
+                ManageInvaders3(Space,Obj,Direction3,WhatInvaderDo3);
+            if (0 != Obj[10].size())
+                ManageInvaders4(Space,Obj,Direction4,WhatInvaderDo4);
+            WhoIsToPlay = 0;
+	    } 
+	  {
+            if (0 != Obj[10].size())
+                ManageInvaders4(Space,Obj,Direction4,WhatInvaderDo4);
+            if (0 != Obj[9].size())
+                ManageInvaders3(Space,Obj,Direction3,WhatInvaderDo3);
+            if (0 != Obj[4].size())
+                ManageInvaders2(Space, Obj, Direction2, WhatInvaderDo2);
+            if (0 != Obj[0].size())
+                ManageInvaders(Space, Obj, Direction, WhatInvaderDo);
+            WhoIsToPlay = 0;	    
+	  }
+        //dans tous les cas :
+        //on fait descendre les missiles
+        MoveDown (Obj[1]);
+        MoveDown (Obj[11]);
+        //on fait descendre les loots de vie
+        MoveDown (Obj[5]);
+        //on fait descendre les loots de score
+        MoveDown (Obj[6]);
+        //on fait monter les torpilles
+        MoveUp (Obj[3]);
+        MoveUp (Obj[8]);
+        //on gere les collisions
+        ManageCollisions (Obj,tourJ);
+        //On supprime les missiles qui sortent de l'air de jeu
+        DeleteMissilesAndLoots (Space, Obj[1]);
+        DeleteMissilesAndLoots (Space, Obj[11]);
+        //On supprime les torpilles qui sortent de l'air de jeu
+        DeleteTorpedos (Obj[3]);
+        //On supprime les loots qui sortent de l'air de jeu
+        DeleteMissilesAndLoots (Space, Obj[5]);
+        DeleteMissilesAndLoots (Space, Obj[6]);
+	//On supprime les bazookas qui sortent de l'air de jeu
+        DeleteBazookas (Obj[8]);
+        
+        //on teste si quelqu'un a gagné
+        Vict = Victory (Space, Obj);
+    }
+    PutAllObjects (Obj, Space);
+    DisplaySpace (Space,tourJ);
+    return Vict;
+} // SpaceInvaders ()
+
+void ShowFile (const string & FileName)
+{
+    ifstream ifs (FileName);
+    for (string Line; getline (ifs, Line);)
+        cout << Line << endl;
+    cout << endl;
+} //ShowFile ()
+
+//http://www.gnu.org/software/libc/manual/html_node/Noncanon-Example.html
+void set_input_mode (void)
+{
+    struct termios tattr;
+
+    /* Make sure stdin is a terminal. */
+    if (!isatty (STDIN_FILENO))
+    {
+        fprintf (stderr, "Not a terminal.\n");
+        exit (EXIT_FAILURE);
+    }
+
+    /* Set the funny terminal modes. */
+    tcgetattr (STDIN_FILENO, &tattr);
+    tattr.c_lflag &= ~(ICANON|ECHO); /* Clear ICANON and ECHO. */
+    tattr.c_cc[VMIN] = 0;
+    tattr.c_cc[VTIME] = 3;
+    tcsetattr (STDIN_FILENO, TCSAFLUSH, &tattr);
+}
+
+unsigned  ppal(const string & Path,unsigned tourJ)
+{
+    srand (time(NULL));
+    set_input_mode ();
+    ShowFile (1 == SpaceInvaders (tourJ) ? Path + "lost.txt" : Path + "win.txt");
+	
+ 	shield = true;
+	TirBazooka = 3;
+
+    /*char finish;
+    while(finish != KPause)
+        read (STDIN_FILENO, &finish, 1);*/
+    if(tourJ == 0)
+    {
+        score = AfficherScore(score);
+		nbVies = 3;
+        return score;
+     	
+    }
+    else if(tourJ == 1)
+    {
+        scoreJ1 = AfficherScore(scoreJ1);
+		nbVies = 3;
+        return scoreJ1;
+    }
+    else if(tourJ == 2)
+    {
+        scoreJ2 = AfficherScore(scoreJ2);
+		nbVies = 3;
+        return scoreJ2;
+    }
+    
+	
+    return 0;
+} //ppal ()
+}
